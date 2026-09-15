@@ -8,34 +8,12 @@ using UnityEngine;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
-/// <summary>
-/// Outil Editor qui met en place toute la chaine "image target -> objet 3D" en un clic :
-/// creation du prefab placeholder, enregistrement des marqueurs dans la ReferenceImageLibrary,
-/// et ajout/cablage des composants sur le XR Origin de la scene ouverte.
-///
-/// Menu : Virtual Tour > Configurer l'Image Tracking
-///
-/// Relancable sans risque : les marqueurs deja presents dans la library ne sont pas touches.
-/// Pour ajouter une station, ajoute une ligne dans k_Markers puis relance le menu.
-/// </summary>
 static class ImageTargetSetup
 {
-    /// <summary>
-    /// Description d'un marqueur du parcours.
-    /// </summary>
     readonly struct MarkerDefinition
     {
-        /// <summary>Chemin de la texture dans le projet.</summary>
         public readonly string texturePath;
-
-        /// <summary>Nom dans la library. C'est la cle utilisee par ImageTargetSpawner.</summary>
         public readonly string imageName;
-
-        /// <summary>
-        /// Largeur PHYSIQUE REELLE du marqueur imprime, en metres.
-        /// La hauteur est deduite du ratio de la texture, il ne faut donc surtout pas
-        /// deformer l'image a l'impression.
-        /// </summary>
         public readonly float printedWidthMeters;
 
         public MarkerDefinition(string texturePath, string imageName, float printedWidthMeters)
@@ -46,8 +24,6 @@ static class ImageTargetSetup
         }
     }
 
-    // >>> Les marqueurs du parcours. Ajuste printedWidthMeters a ton impression reelle,
-    //     mesuree a la regle : ARKit l'exige et ARCore s'en sert pour l'echelle. <<<
     static readonly MarkerDefinition[] k_Markers =
     {
         new("Assets/Tour Eiffel.jpg", "TourEiffel_Station01", 0.15f),
@@ -73,9 +49,6 @@ static class ImageTargetSetup
         WireUpScene(library, prefab);
     }
 
-    /// <summary>
-    /// Cree Assets/Prefabs/ARContent_Placeholder.prefab (cube URP de 10 cm qui tourne lentement).
-    /// </summary>
     static GameObject CreatePlaceholderPrefab()
     {
         var existing = AssetDatabase.LoadAssetAtPath<GameObject>(k_PrefabPath);
@@ -99,12 +72,9 @@ static class ImageTargetSetup
         material.SetColor("_BaseColor", new Color(0f, 0.85f, 1f));
         AssetDatabase.CreateAsset(material, k_MaterialPath);
 
-        // Racine vide : c'est elle qui sera alignee sur le plan de l'image.
         var root = new GameObject("ARContent_Placeholder");
         root.AddComponent<SpinSlowly>();
 
-        // Cube de 10 cm, remonte de 5 cm sur +Y pour reposer SUR la surface de l'image
-        // et non a moitie dedans (+Y sort de la surface d'une ARTrackedImage).
         var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
         cube.name = "Cube";
         cube.transform.SetParent(root.transform, false);
@@ -112,7 +82,6 @@ static class ImageTargetSetup
         cube.transform.localPosition = new Vector3(0f, 0.05f, 0f);
         cube.GetComponent<Renderer>().sharedMaterial = material;
 
-        // Pas de physique sur du contenu AR purement visuel.
         Object.DestroyImmediate(cube.GetComponent<BoxCollider>());
 
         var saved = PrefabUtility.SaveAsPrefabAsset(root, k_PrefabPath);
@@ -122,10 +91,6 @@ static class ImageTargetSetup
         return saved;
     }
 
-    /// <summary>
-    /// Ajoute chaque marqueur de k_Markers a la ReferenceImageLibrary, avec son nom et sa taille
-    /// physique. La hauteur est calculee depuis le ratio reel de la texture.
-    /// </summary>
     static XRReferenceImageLibrary RegisterMarkersInLibrary()
     {
         var library = AssetDatabase.LoadAssetAtPath<XRReferenceImageLibrary>(k_LibraryPath);
@@ -139,6 +104,8 @@ static class ImageTargetSetup
 
         foreach (var marker in k_Markers)
         {
+            EnsureReferenceImageImportSettings(marker.texturePath);
+
             var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(marker.texturePath);
             if (texture == null)
             {
@@ -146,15 +113,9 @@ static class ImageTargetSetup
                 continue;
             }
 
-            // La taille physique DOIT respecter le ratio de l'image, sinon la pose estimee
-            // est deformee et le suivi devient erratique.
             var aspect = (float)texture.height / texture.width;
             var size = new Vector2(marker.printedWidthMeters, marker.printedWidthMeters * aspect);
 
-            // On cherche l'entree par GUID de texture, pas par nom : si la meme image a deja ete
-            // ajoutee a la main dans l'Inspector (nom different, taille non renseignee), on la
-            // repare au lieu de creer un doublon. Deux entrees pointant la meme texture rendraient
-            // la detection ambigue et peuvent faire echouer le build ARCore.
             var index = FindIndexByTexture(library, marker.texturePath);
             var isNew = index < 0;
 
@@ -168,7 +129,6 @@ static class ImageTargetSetup
                      library[index].specifySize &&
                      library[index].size == size)
             {
-                // Deja exactement dans l'etat voulu.
                 continue;
             }
 
@@ -182,7 +142,6 @@ static class ImageTargetSetup
                 $"[Setup] \"{marker.imageName}\" {(isNew ? "ajoute" : "mis a jour")} : " +
                 $"{texture.width}x{texture.height} px, imprime en {size.x:0.###} x {size.y:0.###} m.");
 
-            // ARCore refuse les images de moins de 300 px sur le plus petit cote.
             if (Mathf.Min(texture.width, texture.height) < 300)
             {
                 Debug.LogWarning(
@@ -205,9 +164,35 @@ static class ImageTargetSetup
         return library;
     }
 
-    /// <summary>
-    /// Index de l'entree de la library qui utilise cette texture, ou -1 si aucune.
-    /// </summary>
+    static void EnsureReferenceImageImportSettings(string texturePath)
+    {
+        if (AssetImporter.GetAtPath(texturePath) is not TextureImporter importer)
+            return;
+
+        var needsReimport = false;
+
+        if (importer.npotScale != TextureImporterNPOTScale.None)
+        {
+            importer.npotScale = TextureImporterNPOTScale.None;
+            needsReimport = true;
+        }
+
+        if (importer.mipmapEnabled)
+        {
+            importer.mipmapEnabled = false;
+            needsReimport = true;
+        }
+
+        if (!needsReimport)
+            return;
+
+        importer.SaveAndReimport();
+
+        Debug.Log(
+            $"[Setup] Reglages d'import corriges pour \"{texturePath}\" " +
+            "(pas de redimensionnement en puissance de deux, mipmaps desactivees).");
+    }
+
     static int FindIndexByTexture(XRReferenceImageLibrary library, string texturePath)
     {
         var guidString = AssetDatabase.AssetPathToGUID(texturePath);
@@ -225,10 +210,6 @@ static class ImageTargetSetup
         return -1;
     }
 
-    /// <summary>
-    /// Ajoute ARTrackedImageManager + ImageTargetSpawner sur le XR Origin de la scene ouverte,
-    /// et remplit leurs references.
-    /// </summary>
     static void WireUpScene(XRReferenceImageLibrary library, GameObject prefab)
     {
         var origin = Object.FindFirstObjectByType<XROrigin>();
@@ -246,11 +227,8 @@ static class ImageTargetSetup
 
         manager.referenceLibrary = library;
         manager.requestedMaxNumberOfMovingImages = 1;
-        // trackedImagePrefab volontairement laisse vide : c'est ImageTargetSpawner qui instancie.
         manager.trackedImagePrefab = null;
 
-        // Optionnel mais recommande : sert au mode de persistance "PlaceOnce" de l'ImageTargetSpawner,
-        // qui ancre l'objet dans le monde pour qu'il ne derive pas une fois le marqueur perdu.
         if (go.GetComponent<ARAnchorManager>() == null)
             Undo.AddComponent<ARAnchorManager>(go);
 
@@ -258,12 +236,9 @@ static class ImageTargetSetup
         if (spawner == null)
             spawner = Undo.AddComponent<ImageTargetSpawner>(go);
 
-        // m_Targets est prive et [SerializeField] : on passe par SerializedObject.
         var so = new SerializedObject(spawner);
         var targets = so.FindProperty("m_Targets");
 
-        // On n'ajoute que les entrees manquantes, pour ne pas ecraser les prefabs
-        // deja assignes a la main dans l'Inspector.
         var wired = new HashSet<string>();
         for (var i = 0; i < targets.arraySize; i++)
             wired.Add(targets.GetArrayElementAtIndex(i).FindPropertyRelative("referenceImageName").stringValue);

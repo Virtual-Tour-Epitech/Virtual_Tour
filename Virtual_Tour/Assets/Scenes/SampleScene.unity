@@ -541,6 +541,7 @@ GameObject:
   - component: {fileID: 1054187609}
   - component: {fileID: 1054187612}
   - component: {fileID: 1054187611}
+  - component: {fileID: 1054187613}
   m_Layer: 0
   m_Name: XR Origin
   m_TagString: Untagged
@@ -596,7 +597,7 @@ MonoBehaviour:
   m_Targets:
   - referenceImageName: TourEiffel_Station01
     prefab: {fileID: 652817107492135674, guid: c8ad1d04d57b74555a006110dc050132, type: 3}
-  m_HideWhenTrackingLost: 1
+  m_Persistence: 0
   m_LocalOffset: {x: 0, y: 0, z: 0}
 --- !u!114 &1054187612
 MonoBehaviour:
@@ -616,6 +617,22 @@ MonoBehaviour:
   m_SerializedLibrary: {fileID: 11400000, guid: a1cfa150278e349628d3a61f94e276c9, type: 2}
   m_MaxNumberOfMovingImages: 1
   m_TrackedImagePrefab: {fileID: 0}
+--- !u!114 &1054187613
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054187608}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 728ad7fae8e460a4ba41265c7308d757, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.ARFoundation::UnityEngine.XR.ARFoundation.ARAnchorManager
+  <trackablesChanged>k__BackingField:
+    m_PersistentCalls:
+      m_Calls: []
+  m_AnchorPrefab: {fileID: 0}
 --- !u!1 &1648063386
 GameObject:
   m_ObjectHideFlags: 0
