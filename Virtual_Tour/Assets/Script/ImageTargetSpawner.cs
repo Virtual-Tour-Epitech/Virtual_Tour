@@ -17,7 +17,7 @@ public class ImageTargetSpawner : MonoBehaviour
     public class ImageTargetEntry
     {
         public string referenceImageName;
-        public GameObject prefab;
+        public GameObject sceneObject;
     }
 
     [SerializeField]
@@ -41,7 +41,13 @@ public class ImageTargetSpawner : MonoBehaviour
 
         m_AnchorManager = GetComponent<ARAnchorManager>();
         if (m_AnchorManager == null)
-            m_AnchorManager = FindFirstObjectByType<ARAnchorManager>();
+            m_AnchorManager = FindAnyObjectByType<ARAnchorManager>();
+
+        foreach (var entry in m_Targets)
+        {
+            if (entry != null && entry.sceneObject != null)
+                entry.sceneObject.SetActive(false);
+        }
     }
 
     void OnEnable()
@@ -73,22 +79,24 @@ public class ImageTargetSpawner : MonoBehaviour
         if (m_Persistence == PersistenceMode.PlaceOnce && m_AlreadyPlaced.Contains(imageName))
             return;
 
-        var prefab = FindPrefab(imageName);
+        var target = FindSceneObject(imageName);
 
-        if (prefab == null)
+        if (target == null)
         {
             Debug.LogWarning(
-                $"[ImageTargetSpawner] Image \"{imageName}\" detectee mais aucun prefab ne lui est " +
+                $"[ImageTargetSpawner] Image \"{imageName}\" detectee mais aucun objet ne lui est " +
                 "associe. Verifie que le champ 'Reference Image Name' de l'Inspector correspond " +
                 "exactement au nom saisi dans la ReferenceImageLibrary.", this);
             return;
         }
 
-        var instance = Instantiate(prefab, trackedImage.transform);
-        instance.transform.localPosition = m_LocalOffset;
-        instance.transform.localRotation = Quaternion.identity;
+        target.transform.SetParent(trackedImage.transform, false);
+        target.transform.localPosition = m_LocalOffset;
+        target.transform.localRotation = Quaternion.identity;
+        target.transform.localScale = Vector3.one;
+        target.SetActive(true);
 
-        m_Spawned[trackedImage.trackableId] = instance;
+        m_Spawned[trackedImage.trackableId] = target;
 
         UpdateVisibility(trackedImage);
     }
@@ -164,21 +172,21 @@ public class ImageTargetSpawner : MonoBehaviour
 
         if (instance != null)
         {
+            instance.transform.SetParent(null, true);
+
             if (m_Persistence == PersistenceMode.FollowImage)
-                Destroy(instance);
-            else
-                instance.transform.SetParent(null, true);
+                instance.SetActive(false);
         }
 
         m_Spawned.Remove(trackableId);
     }
 
-    GameObject FindPrefab(string referenceImageName)
+    GameObject FindSceneObject(string referenceImageName)
     {
         foreach (var entry in m_Targets)
         {
-            if (entry != null && entry.prefab != null && entry.referenceImageName == referenceImageName)
-                return entry.prefab;
+            if (entry != null && entry.sceneObject != null && entry.referenceImageName == referenceImageName)
+                return entry.sceneObject;
         }
 
         return null;

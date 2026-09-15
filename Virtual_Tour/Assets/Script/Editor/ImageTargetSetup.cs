@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.XR.ARSubsystems;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
@@ -26,69 +27,22 @@ static class ImageTargetSetup
 
     static readonly MarkerDefinition[] k_Markers =
     {
-        new("Assets/Tour Eiffel.jpg", "TourEiffel_Station01", 0.15f),
+        new("Assets/Tour Eiffel.jpg", "TourEiffel_Station01", 0.065f),
     };
 
     const string k_LibraryPath = "Assets/ReferenceImageLibrary.asset";
-    const string k_PrefabFolder = "Assets/Prefabs";
-    const string k_MaterialFolder = "Assets/Prefabs/Materials";
-    const string k_PrefabPath = k_PrefabFolder + "/ARContent_Placeholder.prefab";
+    const string k_MaterialFolder = "Assets/Materials";
     const string k_MaterialPath = k_MaterialFolder + "/ARContent_Placeholder_Mat.mat";
+    const string k_ContentPrefix = "ARContent_";
 
     [MenuItem("Virtual Tour/Configurer l'Image Tracking")]
     static void Configure()
     {
-        var prefab = CreatePlaceholderPrefab();
-        if (prefab == null)
-            return;
-
         var library = RegisterMarkersInLibrary();
         if (library == null)
             return;
 
-        WireUpScene(library, prefab);
-    }
-
-    static GameObject CreatePlaceholderPrefab()
-    {
-        var existing = AssetDatabase.LoadAssetAtPath<GameObject>(k_PrefabPath);
-        if (existing != null)
-        {
-            Debug.Log($"[Setup] Prefab deja present : {k_PrefabPath}");
-            return existing;
-        }
-
-        EnsureFolder(k_PrefabFolder);
-        EnsureFolder(k_MaterialFolder);
-
-        var shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null)
-        {
-            Debug.LogError("[Setup] Shader URP/Lit introuvable. Le projet utilise-t-il bien URP ?");
-            return null;
-        }
-
-        var material = new Material(shader);
-        material.SetColor("_BaseColor", new Color(0f, 0.85f, 1f));
-        AssetDatabase.CreateAsset(material, k_MaterialPath);
-
-        var root = new GameObject("ARContent_Placeholder");
-        root.AddComponent<SpinSlowly>();
-
-        var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        cube.name = "Cube";
-        cube.transform.SetParent(root.transform, false);
-        cube.transform.localScale = Vector3.one * 0.1f;
-        cube.transform.localPosition = new Vector3(0f, 0.05f, 0f);
-        cube.GetComponent<Renderer>().sharedMaterial = material;
-
-        Object.DestroyImmediate(cube.GetComponent<BoxCollider>());
-
-        var saved = PrefabUtility.SaveAsPrefabAsset(root, k_PrefabPath);
-        Object.DestroyImmediate(root);
-
-        Debug.Log($"[Setup] Prefab cree : {k_PrefabPath}");
-        return saved;
+        WireUpScene(library);
     }
 
     static XRReferenceImageLibrary RegisterMarkersInLibrary()
@@ -210,9 +164,9 @@ static class ImageTargetSetup
         return -1;
     }
 
-    static void WireUpScene(XRReferenceImageLibrary library, GameObject prefab)
+    static void WireUpScene(XRReferenceImageLibrary library)
     {
-        var origin = Object.FindFirstObjectByType<XROrigin>();
+        var origin = Object.FindAnyObjectByType<XROrigin>();
         if (origin == null)
         {
             Debug.LogError("[Setup] Aucun XR Origin dans la scene ouverte. Ouvre SampleScene.");
@@ -239,21 +193,26 @@ static class ImageTargetSetup
         var so = new SerializedObject(spawner);
         var targets = so.FindProperty("m_Targets");
 
-        var wired = new HashSet<string>();
+        var wired = new Dictionary<string, int>();
         for (var i = 0; i < targets.arraySize; i++)
-            wired.Add(targets.GetArrayElementAtIndex(i).FindPropertyRelative("referenceImageName").stringValue);
+        {
+            var name = targets.GetArrayElementAtIndex(i).FindPropertyRelative("referenceImageName").stringValue;
+            wired[name] = i;
+        }
 
         foreach (var marker in k_Markers)
         {
-            if (!wired.Add(marker.imageName))
-                continue;
+            if (!wired.TryGetValue(marker.imageName, out var index))
+            {
+                index = targets.arraySize;
+                targets.arraySize = index + 1;
+                targets.GetArrayElementAtIndex(index)
+                    .FindPropertyRelative("referenceImageName").stringValue = marker.imageName;
+            }
 
-            var index = targets.arraySize;
-            targets.arraySize = index + 1;
-
-            var entry = targets.GetArrayElementAtIndex(index);
-            entry.FindPropertyRelative("referenceImageName").stringValue = marker.imageName;
-            entry.FindPropertyRelative("prefab").objectReferenceValue = prefab;
+            var slot = targets.GetArrayElementAtIndex(index).FindPropertyRelative("sceneObject");
+            if (slot.objectReferenceValue == null)
+                slot.objectReferenceValue = FindOrCreateSceneContent(go.scene, marker.imageName);
         }
 
         so.ApplyModifiedProperties();
@@ -264,6 +223,64 @@ static class ImageTargetSetup
         EditorSceneManager.SaveScene(go.scene);
 
         Debug.Log($"[Setup] Scene \"{go.scene.name}\" configuree et sauvegardee.");
+    }
+
+    static GameObject FindOrCreateSceneContent(Scene scene, string imageName)
+    {
+        var objectName = k_ContentPrefix + imageName;
+
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            if (root.name == objectName)
+                return root;
+        }
+
+        var material = FindOrCreatePlaceholderMaterial();
+        if (material == null)
+            return null;
+
+        var content = new GameObject(objectName);
+
+        var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name = "Cube";
+        cube.transform.SetParent(content.transform, false);
+        cube.transform.localScale = Vector3.one * 0.1f;
+        cube.transform.localPosition = new Vector3(0f, 0.05f, 0f);
+        cube.GetComponent<Renderer>().sharedMaterial = material;
+
+        Object.DestroyImmediate(cube.GetComponent<BoxCollider>());
+
+        content.SetActive(false);
+
+        Undo.RegisterCreatedObjectUndo(content, "Creer le contenu AR");
+
+        Debug.Log(
+            $"[Setup] \"{objectName}\" cree dans la scene, desactive. " +
+            "Remplace son enfant Cube par ton propre modele 3D.");
+
+        return content;
+    }
+
+    static Material FindOrCreatePlaceholderMaterial()
+    {
+        var existing = AssetDatabase.LoadAssetAtPath<Material>(k_MaterialPath);
+        if (existing != null)
+            return existing;
+
+        var shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+        {
+            Debug.LogError("[Setup] Shader URP/Lit introuvable. Le projet utilise-t-il bien URP ?");
+            return null;
+        }
+
+        EnsureFolder(k_MaterialFolder);
+
+        var material = new Material(shader);
+        material.SetColor("_BaseColor", new Color(0f, 0.85f, 1f));
+        AssetDatabase.CreateAsset(material, k_MaterialPath);
+
+        return material;
     }
 
     static void EnsureFolder(string path)
