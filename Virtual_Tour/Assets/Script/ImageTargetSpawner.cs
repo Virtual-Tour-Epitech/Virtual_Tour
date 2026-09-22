@@ -29,11 +29,15 @@ public class ImageTargetSpawner : MonoBehaviour
     [SerializeField]
     Vector3 m_LocalOffset = Vector3.zero;
 
+    [SerializeField]
+    ImageTargetLogger m_Logger;
+
     ARTrackedImageManager m_Manager;
     ARAnchorManager m_AnchorManager;
 
     readonly Dictionary<TrackableId, GameObject> m_Spawned = new();
     readonly HashSet<string> m_AlreadyPlaced = new();
+    readonly Dictionary<GameObject, Transform> m_OriginalParents = new();
 
     void Awake()
     {
@@ -43,11 +47,44 @@ public class ImageTargetSpawner : MonoBehaviour
         if (m_AnchorManager == null)
             m_AnchorManager = FindAnyObjectByType<ARAnchorManager>();
 
+        if (m_Logger == null)
+            m_Logger = FindAnyObjectByType<ImageTargetLogger>();
+
         foreach (var entry in m_Targets)
         {
-            if (entry != null && entry.sceneObject != null)
-                entry.sceneObject.SetActive(false);
+            if (entry == null || entry.sceneObject == null)
+                continue;
+
+            // Memorise avant toute detection : Spawn() reparente l'objet sous l'image suivie,
+            // donc son conteneur d'origine serait perdu au moment de le ranger.
+            m_OriginalParents[entry.sceneObject] = entry.sceneObject.transform.parent;
+            entry.sceneObject.SetActive(false);
         }
+    }
+
+    public void ClearAll()
+    {
+        foreach (var entry in m_Targets)
+        {
+            if (entry == null || entry.sceneObject == null)
+                continue;
+
+            if (m_OriginalParents.TryGetValue(entry.sceneObject, out var parent))
+                entry.sceneObject.transform.SetParent(parent, false);
+
+            entry.sceneObject.SetActive(false);
+        }
+
+        m_Spawned.Clear();
+
+        // Sans ce reset, le mode PlaceOnce refuserait de reafficher un objet deja pose :
+        // le bouton masquerait definitivement jusqu'au redemarrage de l'app.
+        m_AlreadyPlaced.Clear();
+
+        LogAction("Objets masques");
+
+        if (m_Logger != null)
+            m_Logger.LogNoDetection();
     }
 
     void OnEnable()
@@ -76,13 +113,20 @@ public class ImageTargetSpawner : MonoBehaviour
     {
         var imageName = trackedImage.referenceImage.name;
 
+        Log(imageName, trackedImage.trackingState);
+
         if (m_Persistence == PersistenceMode.PlaceOnce && m_AlreadyPlaced.Contains(imageName))
+        {
+            LogAction("Deja pose, ignore");
             return;
+        }
 
         var target = FindSceneObject(imageName);
 
         if (target == null)
         {
+            LogAction("Aucun objet associe");
+
             Debug.LogWarning(
                 $"[ImageTargetSpawner] Image \"{imageName}\" detectee mais aucun objet ne lui est " +
                 "associe. Verifie que le champ 'Reference Image Name' de l'Inspector correspond " +
@@ -98,11 +142,15 @@ public class ImageTargetSpawner : MonoBehaviour
 
         m_Spawned[trackedImage.trackableId] = target;
 
+        LogAction($"\"{target.name}\" affiche");
+
         UpdateVisibility(trackedImage);
     }
 
     void UpdateVisibility(ARTrackedImage trackedImage)
     {
+        Log(trackedImage.referenceImage.name, trackedImage.trackingState);
+
         if (!m_Spawned.TryGetValue(trackedImage.trackableId, out var instance) || instance == null)
             return;
 
@@ -112,7 +160,10 @@ public class ImageTargetSpawner : MonoBehaviour
         {
             case PersistenceMode.FollowImage:
                 if (instance.activeSelf != isTracking)
+                {
                     instance.SetActive(isTracking);
+                    LogAction(isTracking ? $"\"{instance.name}\" affiche" : $"\"{instance.name}\" masque");
+                }
                 break;
 
             case PersistenceMode.FollowAlways:
@@ -136,11 +187,15 @@ public class ImageTargetSpawner : MonoBehaviour
 
         if (m_AnchorManager == null)
         {
+            LogAction($"\"{instance.name}\" pose sans ancrage");
+
             Debug.Log(
                 $"[ImageTargetSpawner] \"{imageName}\" pose sans ancrage (aucun ARAnchorManager " +
                 "dans la scene). Ajoute-en un pour une position plus stable dans la duree.", this);
             return;
         }
+
+        LogAction($"\"{instance.name}\" pose, ancrage en cours");
 
         AnchorAsync(instance, imageName);
     }
@@ -156,6 +211,8 @@ public class ImageTargetSpawner : MonoBehaviour
 
         if (!result.status.IsSuccess())
         {
+            LogAction($"\"{instance.name}\" pose, ancrage echoue");
+
             Debug.LogWarning(
                 $"[ImageTargetSpawner] Echec de l'ancrage de \"{imageName}\". L'objet reste pose " +
                 "mais derivera avec le temps.", this);
@@ -163,6 +220,8 @@ public class ImageTargetSpawner : MonoBehaviour
         }
 
         instance.transform.SetParent(result.value.transform, true);
+
+        LogAction($"\"{instance.name}\" pose et ancre");
     }
 
     void Despawn(TrackableId trackableId)
@@ -176,9 +235,26 @@ public class ImageTargetSpawner : MonoBehaviour
 
             if (m_Persistence == PersistenceMode.FollowImage)
                 instance.SetActive(false);
+
+            LogAction($"\"{instance.name}\" retire (suivi perdu)");
         }
 
         m_Spawned.Remove(trackableId);
+
+        if (m_Spawned.Count == 0 && m_Logger != null)
+            m_Logger.LogNoDetection();
+    }
+
+    void Log(string imageName, TrackingState state)
+    {
+        if (m_Logger != null)
+            m_Logger.LogDetection(imageName, state);
+    }
+
+    void LogAction(string action)
+    {
+        if (m_Logger != null)
+            m_Logger.LogAction(action);
     }
 
     GameObject FindSceneObject(string referenceImageName)

@@ -16,18 +16,24 @@ static class ImageTargetSetup
         public readonly string texturePath;
         public readonly string imageName;
         public readonly float printedWidthMeters;
+        public readonly bool withPlaceholder;
 
-        public MarkerDefinition(string texturePath, string imageName, float printedWidthMeters)
+        public MarkerDefinition(string texturePath, string imageName, float printedWidthMeters, bool withPlaceholder)
         {
             this.texturePath = texturePath;
             this.imageName = imageName;
             this.printedWidthMeters = printedWidthMeters;
+            this.withPlaceholder = withPlaceholder;
         }
     }
 
     static readonly MarkerDefinition[] k_Markers =
     {
-        new("Assets/Tour Eiffel.jpg", "TourEiffel_Station01", 0.065f),
+        new("Assets/ImageTarget/Tour_Eiffel.jpg",
+            "Tour_Eiffel", 0.065f, true),
+
+        new("Assets/ImageTarget/Plan_evacuation_etage_1_Epitech.png",
+            "Plan_Evacuation_Etage_1", 0.21f, false),
     };
 
     const string k_LibraryPath = "Assets/ReferenceImageLibrary.asset";
@@ -180,7 +186,7 @@ static class ImageTargetSetup
             manager = Undo.AddComponent<ARTrackedImageManager>(go);
 
         manager.referenceLibrary = library;
-        manager.requestedMaxNumberOfMovingImages = 1;
+        manager.requestedMaxNumberOfMovingImages = k_Markers.Length;
         manager.trackedImagePrefab = null;
 
         if (go.GetComponent<ARAnchorManager>() == null)
@@ -206,13 +212,30 @@ static class ImageTargetSetup
             {
                 index = targets.arraySize;
                 targets.arraySize = index + 1;
-                targets.GetArrayElementAtIndex(index)
-                    .FindPropertyRelative("referenceImageName").stringValue = marker.imageName;
+
+                var created = targets.GetArrayElementAtIndex(index);
+                created.FindPropertyRelative("referenceImageName").stringValue = marker.imageName;
+
+                // Agrandir un tableau serialise DUPLIQUE le dernier element : sans ce reset,
+                // la nouvelle station herite du sceneObject de la precedente.
+                created.FindPropertyRelative("sceneObject").objectReferenceValue = null;
             }
 
             var slot = targets.GetArrayElementAtIndex(index).FindPropertyRelative("sceneObject");
-            if (slot.objectReferenceValue == null)
-                slot.objectReferenceValue = FindOrCreateSceneContent(go.scene, marker.imageName);
+            var expectedName = k_ContentPrefix + marker.imageName;
+            var current = slot.objectReferenceValue;
+
+            if (current == null || current.name != expectedName)
+            {
+                if (current != null)
+                {
+                    Debug.LogWarning(
+                        $"[Setup] \"{marker.imageName}\" pointait sur \"{current.name}\" au lieu de " +
+                        $"\"{expectedName}\". Reference corrigee.");
+                }
+
+                slot.objectReferenceValue = FindOrCreateSceneContent(go.scene, marker);
+            }
         }
 
         so.ApplyModifiedProperties();
@@ -225,9 +248,9 @@ static class ImageTargetSetup
         Debug.Log($"[Setup] Scene \"{go.scene.name}\" configuree et sauvegardee.");
     }
 
-    static GameObject FindOrCreateSceneContent(Scene scene, string imageName)
+    static GameObject FindOrCreateSceneContent(Scene scene, MarkerDefinition marker)
     {
-        var objectName = k_ContentPrefix + imageName;
+        var objectName = k_ContentPrefix + marker.imageName;
 
         foreach (var root in scene.GetRootGameObjects())
         {
@@ -235,28 +258,37 @@ static class ImageTargetSetup
                 return root;
         }
 
-        var material = FindOrCreatePlaceholderMaterial();
-        if (material == null)
-            return null;
-
         var content = new GameObject(objectName);
 
-        var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        cube.name = "Cube";
-        cube.transform.SetParent(content.transform, false);
-        cube.transform.localScale = Vector3.one * 0.1f;
-        cube.transform.localPosition = new Vector3(0f, 0.05f, 0f);
-        cube.GetComponent<Renderer>().sharedMaterial = material;
+        if (marker.withPlaceholder)
+        {
+            var material = FindOrCreatePlaceholderMaterial();
+            if (material == null)
+            {
+                Object.DestroyImmediate(content);
+                return null;
+            }
 
-        Object.DestroyImmediate(cube.GetComponent<BoxCollider>());
+            var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            cube.name = "Cube";
+            cube.transform.SetParent(content.transform, false);
+            cube.transform.localScale = Vector3.one * 0.1f;
+            cube.transform.localPosition = new Vector3(0f, 0.05f, 0f);
+            cube.GetComponent<Renderer>().sharedMaterial = material;
+
+            Object.DestroyImmediate(cube.GetComponent<BoxCollider>());
+        }
 
         content.SetActive(false);
 
         Undo.RegisterCreatedObjectUndo(content, "Creer le contenu AR");
 
         Debug.Log(
-            $"[Setup] \"{objectName}\" cree dans la scene, desactive. " +
-            "Remplace son enfant Cube par ton propre modele 3D.");
+            marker.withPlaceholder
+                ? $"[Setup] \"{objectName}\" cree dans la scene, desactive. " +
+                  "Remplace son enfant Cube par ton propre modele 3D."
+                : $"[Setup] \"{objectName}\" cree VIDE dans la scene, desactive. " +
+                  "Glisse ton modele 3D dedans, en enfant. +Y est la normale au marqueur.");
 
         return content;
     }
