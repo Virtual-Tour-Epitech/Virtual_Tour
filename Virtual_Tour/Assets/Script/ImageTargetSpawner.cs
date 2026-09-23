@@ -6,6 +6,8 @@ using UnityEngine.XR.ARSubsystems;
 [RequireComponent(typeof(ARTrackedImageManager))]
 public class ImageTargetSpawner : MonoBehaviour
 {
+    public const string MarkerReferenceName = "MarkerReference";
+
     public enum PersistenceMode
     {
         FollowImage,
@@ -39,6 +41,8 @@ public class ImageTargetSpawner : MonoBehaviour
     readonly HashSet<string> m_AlreadyPlaced = new();
     readonly Dictionary<GameObject, Transform> m_OriginalParents = new();
 
+    bool m_ReferencesVisible;
+
     void Awake()
     {
         m_Manager = GetComponent<ARTrackedImageManager>();
@@ -58,6 +62,24 @@ public class ImageTargetSpawner : MonoBehaviour
             m_OriginalParents[entry.sceneObject] = entry.sceneObject.transform.parent;
             entry.sceneObject.SetActive(false);
         }
+    }
+
+    public void ToggleMarkerReferences()
+    {
+        m_ReferencesVisible = !m_ReferencesVisible;
+
+        foreach (var entry in m_Targets)
+        {
+            if (entry == null || entry.sceneObject == null)
+                continue;
+
+            var reference = entry.sceneObject.transform.Find(MarkerReferenceName);
+
+            if (reference != null)
+                reference.gameObject.SetActive(m_ReferencesVisible);
+        }
+
+        LogAction(m_ReferencesVisible ? "Reperes affiches" : "Reperes masques");
     }
 
     public void ClearAll()

@@ -16,7 +16,7 @@ static class ImageTargetSetup
     const string k_MaterialPath = k_MaterialFolder + "/ARContent_Placeholder_Mat.mat";
     const string k_ContentPrefix = "ARContent_";
     const string k_ContainerName = "ARContentsContainer";
-    const string k_ReferenceName = "MarkerReference";
+    const string k_ReferenceName = ImageTargetSpawner.MarkerReferenceName;
     const float k_ReferenceThickness = 0.001f;
     const float k_ContentMarginMeters = 0.05f;
 
@@ -329,6 +329,7 @@ static class ImageTargetSetup
             if (slot.objectReferenceValue is GameObject content)
             {
                 EnsureMarkerReference(content, marker);
+                EnsureContentColliders(content);
                 laidOut.Add((content, marker.WidthInMeters));
             }
         }
@@ -423,8 +424,6 @@ static class ImageTargetSetup
         cube.transform.localPosition = new Vector3(0f, 0.05f, 0f);
         cube.GetComponent<Renderer>().sharedMaterial = material;
 
-        Object.DestroyImmediate(cube.GetComponent<BoxCollider>());
-
         content.SetActive(false);
 
         Undo.RegisterCreatedObjectUndo(content, "Creer le contenu AR");
@@ -444,6 +443,18 @@ static class ImageTargetSetup
         }
 
         return null;
+    }
+
+    static void EnsureContentColliders(GameObject content)
+    {
+        foreach (var renderer in content.GetComponentsInChildren<Renderer>(true))
+        {
+            if (renderer.gameObject.name == k_ReferenceName)
+                continue;
+
+            if (renderer.GetComponent<Collider>() == null)
+                Undo.AddComponent<BoxCollider>(renderer.gameObject);
+        }
     }
 
     static void EnsureMarkerReference(GameObject content, MarkerCatalog.Marker marker)
