@@ -154,6 +154,8 @@ static class ImageTargetSetup
             }
         }
 
+        changed += PruneLibrary(catalog, library);
+
         if (changed > 0)
         {
             EditorUtility.SetDirty(library);
@@ -185,6 +187,31 @@ static class ImageTargetSetup
             $"({texture.width}x{texture.height} px, ratio 1:{imageRatio:0.###}). " +
             $"Pour cette largeur, la hauteur coherente serait {marker.ActiveWidthCm * imageRatio:0.#} cm.",
             texture);
+    }
+
+    static int PruneLibrary(MarkerCatalog catalog, XRReferenceImageLibrary library)
+    {
+        var known = new HashSet<System.Guid>();
+
+        foreach (var marker in catalog.Markers)
+        {
+            if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(marker.image, out var guidString, out long _))
+                known.Add(new System.Guid(guidString));
+        }
+
+        var removed = 0;
+
+        for (var i = library.count - 1; i >= 0; i--)
+        {
+            if (known.Contains(library[i].textureGuid))
+                continue;
+
+            Debug.Log($"[Setup] \"{library[i].name}\" retire de la library : absent du catalogue.");
+            library.RemoveAt(i);
+            removed++;
+        }
+
+        return removed;
     }
 
     static void EnsureReferenceImageImportSettings(Texture2D texture)
@@ -265,6 +292,8 @@ static class ImageTargetSetup
         var so = new SerializedObject(spawner);
         var targets = so.FindProperty("m_Targets");
 
+        PruneTargets(catalog, targets);
+
         var wired = new Dictionary<string, int>();
         for (var i = 0; i < targets.arraySize; i++)
         {
@@ -312,6 +341,25 @@ static class ImageTargetSetup
         EditorSceneManager.SaveScene(go.scene);
 
         Debug.Log($"[Setup] Scene \"{go.scene.name}\" configuree et sauvegardee.");
+    }
+
+    static void PruneTargets(MarkerCatalog catalog, SerializedProperty targets)
+    {
+        var known = new HashSet<string>();
+
+        foreach (var marker in catalog.Markers)
+            known.Add(marker.imageName);
+
+        for (var i = targets.arraySize - 1; i >= 0; i--)
+        {
+            var name = targets.GetArrayElementAtIndex(i).FindPropertyRelative("referenceImageName").stringValue;
+
+            if (known.Contains(name))
+                continue;
+
+            Debug.Log($"[Setup] Entree \"{name}\" retiree de m_Targets : absente du catalogue.");
+            targets.DeleteArrayElementAtIndex(i);
+        }
     }
 
     static GameObject FindOrCreateSceneContent(Scene scene, MarkerCatalog.Marker marker)
