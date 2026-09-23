@@ -129,8 +129,6 @@ static class ImageTargetSetup
             else if (!names.Add(marker.imageName))
                 problems.Add($"{label} : Image Name \"{marker.imageName}\" en double");
 
-            // On ne valide que le jeu actif : une station en mode ecran n'a pas besoin
-            // d'avoir ses dimensions papier renseignees tant qu'on n'a pas mesure le panneau.
             if (marker.ActiveWidthCm <= 0f)
                 problems.Add($"{label} (\"{marker.imageName}\") : mode {marker.ModeLabel}, mais largeur invalide ({marker.ActiveWidthCm} cm)");
 
@@ -254,8 +252,6 @@ static class ImageTargetSetup
 
     static int FindIndexByTexture(XRReferenceImageLibrary library, Texture2D texture)
     {
-        // Meme appel que GetGuidForTexture() d'AR Foundation : le GUID lu ici et celui ecrit
-        // par SetTexture() concordent donc toujours, y compris apres un renommage de fichier.
         if (!AssetDatabase.TryGetGUIDAndLocalFileIdentifier(texture, out var guidString, out long _))
             return -1;
 
@@ -320,8 +316,6 @@ static class ImageTargetSetup
                 var created = targets.GetArrayElementAtIndex(index);
                 created.FindPropertyRelative("referenceImageName").stringValue = marker.imageName;
 
-                // Agrandir un tableau serialise DUPLIQUE le dernier element : sans ce reset,
-                // la nouvelle station herite du sceneObject de la precedente.
                 created.FindPropertyRelative("sceneObject").objectReferenceValue = null;
             }
 

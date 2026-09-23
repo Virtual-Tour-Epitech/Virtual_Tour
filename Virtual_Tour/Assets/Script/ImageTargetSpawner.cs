@@ -55,8 +55,6 @@ public class ImageTargetSpawner : MonoBehaviour
             if (entry == null || entry.sceneObject == null)
                 continue;
 
-            // Memorise avant toute detection : Spawn() reparente l'objet sous l'image suivie,
-            // donc son conteneur d'origine serait perdu au moment de le ranger.
             m_OriginalParents[entry.sceneObject] = entry.sceneObject.transform.parent;
             entry.sceneObject.SetActive(false);
         }
@@ -77,8 +75,6 @@ public class ImageTargetSpawner : MonoBehaviour
 
         m_Spawned.Clear();
 
-        // Sans ce reset, le mode PlaceOnce refuserait de reafficher un objet deja pose :
-        // le bouton masquerait definitivement jusqu'au redemarrage de l'app.
         m_AlreadyPlaced.Clear();
 
         LogAction("Objets masques");

@@ -35,8 +35,6 @@ public class ImageTargetLogger : MonoBehaviour
 
     static void Set(TextMeshProUGUI output, string value)
     {
-        // UpdateVisibility tourne a chaque frame pour chaque image suivie : sans ce test,
-        // on reconstruirait le maillage du texte 60 fois par seconde pour rien.
         if (output != null && output.text != value)
             output.text = value;
     }
