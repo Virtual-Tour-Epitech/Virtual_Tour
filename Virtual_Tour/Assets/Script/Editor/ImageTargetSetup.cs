@@ -18,6 +18,7 @@ static class ImageTargetSetup
     const string k_ContainerName = "ARContentsContainer";
     const string k_ReferenceName = "MarkerReference";
     const float k_ReferenceThickness = 0.001f;
+    const float k_ContentMarginMeters = 0.05f;
 
     [MenuItem("Virtual Tour/Configurer l'Image Tracking")]
     static void Configure()
@@ -307,6 +308,8 @@ static class ImageTargetSetup
             wired[name] = i;
         }
 
+        var laidOut = new List<(GameObject content, float widthMeters)>();
+
         foreach (var marker in catalog.Markers)
         {
             if (!wired.TryGetValue(marker.imageName, out var index))
@@ -330,8 +333,13 @@ static class ImageTargetSetup
                 slot.objectReferenceValue = FindOrCreateSceneContent(go.scene, marker);
 
             if (slot.objectReferenceValue is GameObject content)
+            {
                 EnsureMarkerReference(content, marker);
+                laidOut.Add((content, marker.WidthInMeters));
+            }
         }
+
+        LayoutContents(laidOut);
 
         so.ApplyModifiedProperties();
 
@@ -355,6 +363,25 @@ static class ImageTargetSetup
             if (known.Contains(name))
                 continue;
             targets.DeleteArrayElementAtIndex(i);
+        }
+    }
+
+    static void LayoutContents(List<(GameObject content, float widthMeters)> items)
+    {
+        var cursorX = 0f;
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var (content, widthMeters) = items[i];
+            var halfWidth = widthMeters * 0.5f;
+
+            if (i > 0)
+                cursorX += halfWidth;
+
+            Undo.RecordObject(content.transform, "Ranger les contenus AR");
+            content.transform.localPosition = new Vector3(cursorX, 0f, 0f);
+
+            cursorX += halfWidth + k_ContentMarginMeters;
         }
     }
 
