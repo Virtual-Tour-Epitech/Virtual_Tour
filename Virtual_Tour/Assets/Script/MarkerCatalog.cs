@@ -1,12 +1,15 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+[CreateAssetMenu(fileName = "MarkerCatalog", menuName = "Virtual Tour/Marker Catalog")]
 public class MarkerCatalog : ScriptableObject
 {
     [System.Serializable]
     public class Marker
     {
         public Texture2D image;
+
+        public Material referenceMaterial;
 
         public string imageName;
 

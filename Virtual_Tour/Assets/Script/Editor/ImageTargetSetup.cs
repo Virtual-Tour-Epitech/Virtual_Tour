@@ -15,6 +15,9 @@ static class ImageTargetSetup
     const string k_MaterialFolder = "Assets/Materials";
     const string k_MaterialPath = k_MaterialFolder + "/ARContent_Placeholder_Mat.mat";
     const string k_ContentPrefix = "ARContent_";
+    const string k_ContainerName = "ARContentsContainer";
+    const string k_ReferenceName = "MarkerReference";
+    const float k_ReferenceThickness = 0.001f;
 
     [MenuItem("Virtual Tour/Configurer l'Image Tracking")]
     static void Configure()
@@ -31,6 +34,51 @@ static class ImageTargetSetup
             return;
 
         WireUpScene(catalog, library);
+    }
+
+    [MenuItem("Virtual Tour/Display ARContent/True")]
+    static void ShowContents()
+    {
+        SetContentsActive(true);
+    }
+
+    [MenuItem("Virtual Tour/Display ARContent/False")]
+    static void HideContents()
+    {
+        SetContentsActive(false);
+    }
+
+    static void SetContentsActive(bool active)
+    {
+        var scene = SceneManager.GetActiveScene();
+        var container = FindInScene(scene, k_ContainerName);
+
+        if (container == null)
+        {
+            Debug.LogError(
+                $"[Setup] \"{k_ContainerName}\" introuvable dans la scene ouverte. " +
+                "Lance d'abord \"Configurer l'Image Tracking\".");
+            return;
+        }
+
+        var count = 0;
+
+        foreach (Transform child in container.transform)
+        {
+            Undo.RecordObject(child.gameObject, "Basculer l'affichage des contenus AR");
+            child.gameObject.SetActive(active);
+
+            var reference = child.Find(k_ReferenceName);
+            if (reference != null)
+            {
+                Undo.RecordObject(reference.gameObject, "Basculer l'affichage des contenus AR");
+                reference.gameObject.SetActive(active);
+            }
+
+            count++;
+        }
+
+        EditorSceneManager.MarkSceneDirty(scene);
     }
 
     static MarkerCatalog LoadCatalog()
@@ -118,8 +166,6 @@ static class ImageTargetSetup
 
             var size = new Vector2(marker.WidthInMeters, marker.HeightInMeters);
 
-            WarnOnRatioMismatch(marker, texture);
-
             var index = FindIndexByTexture(library, texture);
             var isNew = index < 0;
 
@@ -141,17 +187,6 @@ static class ImageTargetSetup
             library.SetSize(index, size);
 
             changed++;
-
-            Debug.Log(
-                $"[Setup] \"{marker.imageName}\" {(isNew ? "ajoute" : "mis a jour")} : " +
-                $"{texture.width}x{texture.height} px, {marker.ModeLabel} {size.x:0.###} x {size.y:0.###} m.");
-
-            if (Mathf.Min(texture.width, texture.height) < 300)
-            {
-                Debug.LogWarning(
-                    $"[Setup] \"{marker.imageName}\" fait moins de 300 px sur son plus petit cote. " +
-                    "ARCore risque de la rejeter : utilise une version haute resolution.", texture);
-            }
         }
 
         changed += PruneLibrary(catalog, library);
@@ -161,32 +196,9 @@ static class ImageTargetSetup
             EditorUtility.SetDirty(library);
             AssetDatabase.SaveAssets();
             Selection.activeObject = library;
-
-            Debug.Log(
-                "[Setup] Library mise a jour. Regarde la note de qualite de chaque image dans " +
-                "l'Inspector (selectionne maintenant) : vise 60+, idealement 80+.", library);
         }
 
         return library;
-    }
-
-    /// La taille physique declaree devrait respecter le ratio de l'image : si les deux divergent,
-    /// la pose estimee par ARKit/ARCore est deformee et le suivi devient erratique.
-    static void WarnOnRatioMismatch(MarkerCatalog.Marker marker, Texture2D texture)
-    {
-        var imageRatio = (float)texture.height / texture.width;
-        var declaredRatio = marker.ActiveHeightCm / marker.ActiveWidthCm;
-
-        if (Mathf.Abs(declaredRatio - imageRatio) / imageRatio < 0.02f)
-            return;
-
-        Debug.LogWarning(
-            $"[Setup] \"{marker.imageName}\" : la taille {marker.ModeLabel} declaree " +
-            $"({marker.ActiveWidthCm} x {marker.ActiveHeightCm} cm, ratio 1:{declaredRatio:0.###}) " +
-            $"ne respecte pas le ratio de l'image " +
-            $"({texture.width}x{texture.height} px, ratio 1:{imageRatio:0.###}). " +
-            $"Pour cette largeur, la hauteur coherente serait {marker.ActiveWidthCm * imageRatio:0.#} cm.",
-            texture);
     }
 
     static int PruneLibrary(MarkerCatalog catalog, XRReferenceImageLibrary library)
@@ -205,8 +217,6 @@ static class ImageTargetSetup
         {
             if (known.Contains(library[i].textureGuid))
                 continue;
-
-            Debug.Log($"[Setup] \"{library[i].name}\" retire de la library : absent du catalogue.");
             library.RemoveAt(i);
             removed++;
         }
@@ -239,10 +249,6 @@ static class ImageTargetSetup
             return;
 
         importer.SaveAndReimport();
-
-        Debug.Log(
-            $"[Setup] Reglages d'import corriges pour \"{texturePath}\" " +
-            "(pas de redimensionnement en puissance de deux, mipmaps desactivees).");
     }
 
     static int FindIndexByTexture(XRReferenceImageLibrary library, Texture2D texture)
@@ -321,16 +327,10 @@ static class ImageTargetSetup
             var current = slot.objectReferenceValue;
 
             if (current == null || current.name != expectedName)
-            {
-                if (current != null)
-                {
-                    Debug.LogWarning(
-                        $"[Setup] \"{marker.imageName}\" pointait sur \"{current.name}\" au lieu de " +
-                        $"\"{expectedName}\". Reference corrigee.");
-                }
-
                 slot.objectReferenceValue = FindOrCreateSceneContent(go.scene, marker);
-            }
+
+            if (slot.objectReferenceValue is GameObject content)
+                EnsureMarkerReference(content, marker);
         }
 
         so.ApplyModifiedProperties();
@@ -339,8 +339,6 @@ static class ImageTargetSetup
         EditorUtility.SetDirty(spawner);
         EditorSceneManager.MarkSceneDirty(go.scene);
         EditorSceneManager.SaveScene(go.scene);
-
-        Debug.Log($"[Setup] Scene \"{go.scene.name}\" configuree et sauvegardee.");
     }
 
     static void PruneTargets(MarkerCatalog catalog, SerializedProperty targets)
@@ -356,20 +354,38 @@ static class ImageTargetSetup
 
             if (known.Contains(name))
                 continue;
-
-            Debug.Log($"[Setup] Entree \"{name}\" retiree de m_Targets : absente du catalogue.");
             targets.DeleteArrayElementAtIndex(i);
         }
+    }
+
+    static GameObject FindOrCreateContainer(Scene scene)
+    {
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            if (root.name == k_ContainerName)
+                return root;
+        }
+
+        var container = new GameObject(k_ContainerName);
+        Undo.RegisterCreatedObjectUndo(container, "Creer le conteneur AR");
+
+        return container;
     }
 
     static GameObject FindOrCreateSceneContent(Scene scene, MarkerCatalog.Marker marker)
     {
         var objectName = k_ContentPrefix + marker.imageName;
+        var container = FindOrCreateContainer(scene);
 
-        foreach (var root in scene.GetRootGameObjects())
+        var inContainer = container.transform.Find(objectName);
+        if (inContainer != null)
+            return inContainer.gameObject;
+
+        var existing = FindInScene(scene, objectName);
+        if (existing != null)
         {
-            if (root.name == objectName)
-                return root;
+            Undo.SetTransformParent(existing.transform, container.transform, "Ranger le contenu AR");
+            return existing;
         }
 
         var material = FindOrCreatePlaceholderMaterial();
@@ -377,6 +393,7 @@ static class ImageTargetSetup
             return null;
 
         var content = new GameObject(objectName);
+        content.transform.SetParent(container.transform, false);
 
         var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
         cube.name = "Cube";
@@ -391,11 +408,58 @@ static class ImageTargetSetup
 
         Undo.RegisterCreatedObjectUndo(content, "Creer le contenu AR");
 
-        Debug.Log(
-            $"[Setup] \"{objectName}\" cree dans la scene, desactive. " +
-            "Remplace son enfant Cube par ton propre modele 3D.");
-
         return content;
+    }
+
+    static GameObject FindInScene(Scene scene, string objectName)
+    {
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            foreach (var transform in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (transform.name == objectName)
+                    return transform.gameObject;
+            }
+        }
+
+        return null;
+    }
+
+    static void EnsureMarkerReference(GameObject content, MarkerCatalog.Marker marker)
+    {
+        var existing = content.transform.Find(k_ReferenceName);
+        GameObject reference;
+
+        if (existing != null)
+        {
+            reference = existing.gameObject;
+        }
+        else
+        {
+            reference = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            reference.name = k_ReferenceName;
+            reference.transform.SetParent(content.transform, false);
+
+            Object.DestroyImmediate(reference.GetComponent<BoxCollider>());
+            Undo.RegisterCreatedObjectUndo(reference, "Creer le repere de marqueur");
+        }
+
+        reference.transform.localPosition = Vector3.zero;
+
+        reference.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+
+        reference.transform.localScale =
+            new Vector3(marker.WidthInMeters, k_ReferenceThickness, marker.HeightInMeters);
+
+        var material = marker.referenceMaterial;
+
+        if (material == null)
+        {
+            material = FindOrCreatePlaceholderMaterial();
+        }
+
+        reference.GetComponent<Renderer>().sharedMaterial = material;
+        reference.SetActive(false);
     }
 
     static Material FindOrCreatePlaceholderMaterial()

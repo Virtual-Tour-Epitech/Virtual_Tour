@@ -124,11 +124,6 @@ public class ImageTargetSpawner : MonoBehaviour
         if (target == null)
         {
             LogAction("Aucun objet associe");
-
-            Debug.LogWarning(
-                $"[ImageTargetSpawner] Image \"{imageName}\" detectee mais aucun objet ne lui est " +
-                "associe. Verifie que le champ 'Reference Image Name' de l'Inspector correspond " +
-                "exactement au nom saisi dans la ReferenceImageLibrary.", this);
             return;
         }
 
@@ -186,10 +181,6 @@ public class ImageTargetSpawner : MonoBehaviour
         if (m_AnchorManager == null)
         {
             LogAction($"\"{instance.name}\" pose sans ancrage");
-
-            Debug.Log(
-                $"[ImageTargetSpawner] \"{imageName}\" pose sans ancrage (aucun ARAnchorManager " +
-                "dans la scene). Ajoute-en un pour une position plus stable dans la duree.", this);
             return;
         }
 
@@ -210,10 +201,6 @@ public class ImageTargetSpawner : MonoBehaviour
         if (!result.status.IsSuccess())
         {
             LogAction($"\"{instance.name}\" pose, ancrage echoue");
-
-            Debug.LogWarning(
-                $"[ImageTargetSpawner] Echec de l'ancrage de \"{imageName}\". L'objet reste pose " +
-                "mais derivera avec le temps.", this);
             return;
         }
 
