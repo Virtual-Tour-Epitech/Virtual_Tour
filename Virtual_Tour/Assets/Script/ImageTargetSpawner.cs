@@ -82,9 +82,7 @@ public class ImageTargetSpawner : MonoBehaviour
         m_AlreadyPlaced.Clear();
 
         LogAction("Objets masques");
-
-        if (m_Logger != null)
-            m_Logger.LogNoDetection();
+        LogNoDetection();
     }
 
     void OnEnable()
@@ -241,8 +239,8 @@ public class ImageTargetSpawner : MonoBehaviour
 
         m_Spawned.Remove(trackableId);
 
-        if (m_Spawned.Count == 0 && m_Logger != null)
-            m_Logger.LogNoDetection();
+        if (m_Spawned.Count == 0)
+            LogNoDetection();
     }
 
     void Log(string imageName, TrackingState state)
@@ -255,6 +253,12 @@ public class ImageTargetSpawner : MonoBehaviour
     {
         if (m_Logger != null)
             m_Logger.LogAction(action);
+    }
+
+    void LogNoDetection()
+    {
+        if (m_Logger != null)
+            m_Logger.LogNoDetection();
     }
 
     GameObject FindSceneObject(string referenceImageName)
