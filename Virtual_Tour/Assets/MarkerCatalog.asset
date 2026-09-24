@@ -21,11 +21,3 @@ MonoBehaviour:
     screenHeightCm: 16.2
     printWidthCm: 21
     printHeightCm: 29.7
-  - image: {fileID: 2800000, guid: 2160be9a5fed44d6b82fa9b17a272e9f, type: 3}
-    referenceMaterial: {fileID: 2100000, guid: 410fdb3a2858341b7a6889925c2f497d, type: 2}
-    imageName: Plan_Evacuation_Etage_2
-    isProduction: 0
-    screenWidthCm: 20
-    screenHeightCm: 16.2
-    printWidthCm: 21
-    printHeightCm: 29.7

@@ -2303,8 +2303,6 @@ MonoBehaviour:
   m_Targets:
   - referenceImageName: Plan_Evacuation_Etage_1
     sceneObject: {fileID: 1534102650}
-  - referenceImageName: Plan_Evacuation_Etage_2
-    sceneObject: {fileID: 0}
   m_Persistence: 2
   m_LocalOffset: {x: 0, y: 0, z: 0}
   m_Logger: {fileID: 0}
@@ -2324,7 +2322,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   m_SerializedLibrary: {fileID: 11400000, guid: a1cfa150278e349628d3a61f94e276c9, type: 2}
-  m_MaxNumberOfMovingImages: 2
+  m_MaxNumberOfMovingImages: 1
   m_TrackedImagePrefab: {fileID: 0}
 --- !u!114 &1054187613
 MonoBehaviour:
