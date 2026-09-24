@@ -11,6 +11,9 @@ public class CrosshairPointer : MonoBehaviour
     ImageTargetLogger m_Logger;
 
     [SerializeField]
+    InteractionPanel m_InteractionPanel;
+
+    [SerializeField]
     Graphic[] m_Branches;
 
     [SerializeField]
@@ -44,6 +47,9 @@ public class CrosshairPointer : MonoBehaviour
         if (m_Logger == null)
             m_Logger = FindAnyObjectByType<ImageTargetLogger>();
 
+        if (m_InteractionPanel == null)
+            m_InteractionPanel = FindAnyObjectByType<InteractionPanel>();
+
         if (m_Camera == null)
             Debug.LogError("[CrosshairPointer] Aucune camera trouvee : le pointeur restera inerte.", this);
     }
@@ -69,6 +75,9 @@ public class CrosshairPointer : MonoBehaviour
                 highlight.OnAimEnter();
 
             m_Highlight = highlight;
+
+            if (m_InteractionPanel != null)
+                m_InteractionPanel.SetTarget(highlight);
         }
 
         var aimed = hasHit ? hit.collider.gameObject.name : null;
