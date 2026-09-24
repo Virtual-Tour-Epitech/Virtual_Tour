@@ -12,10 +12,19 @@ public class ImageTargetLogger : MonoBehaviour
     [SerializeField]
     TextMeshProUGUI m_ActionOutput;
 
+    [SerializeField]
+    TextMeshProUGUI m_AimOutput;
+
     void Start()
     {
         Set(m_DetectionOutput, k_Idle);
         Set(m_ActionOutput, k_Idle);
+        Set(m_AimOutput, k_Idle);
+    }
+
+    public void LogAim(string objectName)
+    {
+        Set(m_AimOutput, string.IsNullOrEmpty(objectName) ? k_Idle : objectName);
     }
 
     public void LogDetection(string imageName, TrackingState state)
@@ -35,8 +44,6 @@ public class ImageTargetLogger : MonoBehaviour
 
     static void Set(TextMeshProUGUI output, string value)
     {
-        // UpdateVisibility tourne a chaque frame pour chaque image suivie : sans ce test,
-        // on reconstruirait le maillage du texte 60 fois par seconde pour rien.
         if (output != null && output.text != value)
             output.text = value;
     }

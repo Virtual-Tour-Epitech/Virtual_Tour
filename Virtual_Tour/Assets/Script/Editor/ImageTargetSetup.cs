@@ -11,47 +11,142 @@ using UnityEngine.XR.ARSubsystems;
 
 static class ImageTargetSetup
 {
-    readonly struct MarkerDefinition
-    {
-        public readonly string texturePath;
-        public readonly string imageName;
-        public readonly float printedWidthMeters;
-        public readonly bool withPlaceholder;
-
-        public MarkerDefinition(string texturePath, string imageName, float printedWidthMeters, bool withPlaceholder)
-        {
-            this.texturePath = texturePath;
-            this.imageName = imageName;
-            this.printedWidthMeters = printedWidthMeters;
-            this.withPlaceholder = withPlaceholder;
-        }
-    }
-
-    static readonly MarkerDefinition[] k_Markers =
-    {
-        new("Assets/ImageTarget/Tour_Eiffel.jpg",
-            "Tour_Eiffel", 0.065f, true),
-
-        new("Assets/ImageTarget/Plan_evacuation_etage_1_Epitech.png",
-            "Plan_Evacuation_Etage_1", 0.21f, false),
-    };
-
     const string k_LibraryPath = "Assets/ReferenceImageLibrary.asset";
     const string k_MaterialFolder = "Assets/Materials";
     const string k_MaterialPath = k_MaterialFolder + "/ARContent_Placeholder_Mat.mat";
     const string k_ContentPrefix = "ARContent_";
+    const string k_ContainerName = "ARContentsContainer";
+    const string k_ReferenceName = ImageTargetSpawner.MarkerReferenceName;
+    const float k_ReferenceThickness = 0.001f;
+    const float k_ContentMarginMeters = 0.05f;
 
     [MenuItem("Virtual Tour/Configurer l'Image Tracking")]
     static void Configure()
     {
-        var library = RegisterMarkersInLibrary();
+        var catalog = LoadCatalog();
+        if (catalog == null)
+            return;
+
+        if (!Validate(catalog))
+            return;
+
+        var library = RegisterMarkersInLibrary(catalog);
         if (library == null)
             return;
 
-        WireUpScene(library);
+        WireUpScene(catalog, library);
     }
 
-    static XRReferenceImageLibrary RegisterMarkersInLibrary()
+    [MenuItem("Virtual Tour/Display ARContent/True")]
+    static void ShowContents()
+    {
+        SetContentsActive(true);
+    }
+
+    [MenuItem("Virtual Tour/Display ARContent/False")]
+    static void HideContents()
+    {
+        SetContentsActive(false);
+    }
+
+    static void SetContentsActive(bool active)
+    {
+        var scene = SceneManager.GetActiveScene();
+        var container = FindInScene(scene, k_ContainerName);
+
+        if (container == null)
+        {
+            Debug.LogError(
+                $"[Setup] \"{k_ContainerName}\" introuvable dans la scene ouverte. " +
+                "Lance d'abord \"Configurer l'Image Tracking\".");
+            return;
+        }
+
+        var count = 0;
+
+        foreach (Transform child in container.transform)
+        {
+            Undo.RecordObject(child.gameObject, "Basculer l'affichage des contenus AR");
+            child.gameObject.SetActive(active);
+
+            var reference = child.Find(k_ReferenceName);
+            if (reference != null)
+            {
+                Undo.RecordObject(reference.gameObject, "Basculer l'affichage des contenus AR");
+                reference.gameObject.SetActive(active);
+            }
+
+            count++;
+        }
+
+        EditorSceneManager.MarkSceneDirty(scene);
+    }
+
+    static MarkerCatalog LoadCatalog()
+    {
+        var guids = AssetDatabase.FindAssets("t:MarkerCatalog");
+
+        if (guids.Length == 0)
+        {
+            Debug.LogError(
+                "[Setup] Aucun MarkerCatalog dans le projet. " +
+                "Cree-le avec Create > Virtual Tour > Marker Catalog.");
+            return null;
+        }
+
+        if (guids.Length > 1)
+        {
+            Debug.LogError(
+                $"[Setup] {guids.Length} MarkerCatalog trouves, il n'en faut qu'un seul :\n  - " +
+                string.Join("\n  - ", System.Array.ConvertAll(guids, AssetDatabase.GUIDToAssetPath)));
+            return null;
+        }
+
+        return AssetDatabase.LoadAssetAtPath<MarkerCatalog>(AssetDatabase.GUIDToAssetPath(guids[0]));
+    }
+
+    static bool Validate(MarkerCatalog catalog)
+    {
+        var problems = new List<string>();
+        var names = new HashSet<string>();
+
+        for (var i = 0; i < catalog.Markers.Count; i++)
+        {
+            var marker = catalog.Markers[i];
+            var label = $"entree {i}";
+
+            if (marker == null)
+            {
+                problems.Add($"{label} : vide");
+                continue;
+            }
+
+            if (marker.image == null)
+                problems.Add($"{label} (\"{marker.imageName}\") : aucune image assignee");
+
+            if (string.IsNullOrWhiteSpace(marker.imageName))
+                problems.Add($"{label} : Image Name vide");
+            else if (!names.Add(marker.imageName))
+                problems.Add($"{label} : Image Name \"{marker.imageName}\" en double");
+
+            if (marker.ActiveWidthCm <= 0f)
+                problems.Add($"{label} (\"{marker.imageName}\") : mode {marker.ModeLabel}, mais largeur invalide ({marker.ActiveWidthCm} cm)");
+
+            if (marker.ActiveHeightCm <= 0f)
+                problems.Add($"{label} (\"{marker.imageName}\") : mode {marker.ModeLabel}, mais hauteur invalide ({marker.ActiveHeightCm} cm)");
+        }
+
+        if (problems.Count == 0)
+            return true;
+
+        Debug.LogError(
+            "[Setup] Catalogue invalide, aucune modification effectuee :\n  - " +
+            string.Join("\n  - ", problems), catalog);
+
+        return false;
+    }
+
+    static XRReferenceImageLibrary RegisterMarkersInLibrary(MarkerCatalog catalog)
     {
         var library = AssetDatabase.LoadAssetAtPath<XRReferenceImageLibrary>(k_LibraryPath);
         if (library == null)
@@ -62,21 +157,15 @@ static class ImageTargetSetup
 
         var changed = 0;
 
-        foreach (var marker in k_Markers)
+        foreach (var marker in catalog.Markers)
         {
-            EnsureReferenceImageImportSettings(marker.texturePath);
+            var texture = marker.image;
 
-            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(marker.texturePath);
-            if (texture == null)
-            {
-                Debug.LogError($"[Setup] Texture introuvable a \"{marker.texturePath}\"");
-                continue;
-            }
+            EnsureReferenceImageImportSettings(texture);
 
-            var aspect = (float)texture.height / texture.width;
-            var size = new Vector2(marker.printedWidthMeters, marker.printedWidthMeters * aspect);
+            var size = new Vector2(marker.WidthInMeters, marker.HeightInMeters);
 
-            var index = FindIndexByTexture(library, marker.texturePath);
+            var index = FindIndexByTexture(library, texture);
             var isNew = index < 0;
 
             if (isNew)
@@ -97,35 +186,47 @@ static class ImageTargetSetup
             library.SetSize(index, size);
 
             changed++;
-
-            Debug.Log(
-                $"[Setup] \"{marker.imageName}\" {(isNew ? "ajoute" : "mis a jour")} : " +
-                $"{texture.width}x{texture.height} px, imprime en {size.x:0.###} x {size.y:0.###} m.");
-
-            if (Mathf.Min(texture.width, texture.height) < 300)
-            {
-                Debug.LogWarning(
-                    $"[Setup] \"{marker.imageName}\" fait moins de 300 px sur son plus petit cote. " +
-                    "ARCore risque de la rejeter : utilise une version haute resolution.", texture);
-            }
         }
+
+        changed += PruneLibrary(catalog, library);
 
         if (changed > 0)
         {
             EditorUtility.SetDirty(library);
             AssetDatabase.SaveAssets();
             Selection.activeObject = library;
-
-            Debug.Log(
-                "[Setup] Library mise a jour. Regarde la note de qualite de chaque image dans " +
-                "l'Inspector (selectionne maintenant) : vise 60+, idealement 80+.", library);
         }
 
         return library;
     }
 
-    static void EnsureReferenceImageImportSettings(string texturePath)
+    static int PruneLibrary(MarkerCatalog catalog, XRReferenceImageLibrary library)
     {
+        var known = new HashSet<System.Guid>();
+
+        foreach (var marker in catalog.Markers)
+        {
+            if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(marker.image, out var guidString, out long _))
+                known.Add(new System.Guid(guidString));
+        }
+
+        var removed = 0;
+
+        for (var i = library.count - 1; i >= 0; i--)
+        {
+            if (known.Contains(library[i].textureGuid))
+                continue;
+            library.RemoveAt(i);
+            removed++;
+        }
+
+        return removed;
+    }
+
+    static void EnsureReferenceImageImportSettings(Texture2D texture)
+    {
+        var texturePath = AssetDatabase.GetAssetPath(texture);
+
         if (AssetImporter.GetAtPath(texturePath) is not TextureImporter importer)
             return;
 
@@ -147,16 +248,11 @@ static class ImageTargetSetup
             return;
 
         importer.SaveAndReimport();
-
-        Debug.Log(
-            $"[Setup] Reglages d'import corriges pour \"{texturePath}\" " +
-            "(pas de redimensionnement en puissance de deux, mipmaps desactivees).");
     }
 
-    static int FindIndexByTexture(XRReferenceImageLibrary library, string texturePath)
+    static int FindIndexByTexture(XRReferenceImageLibrary library, Texture2D texture)
     {
-        var guidString = AssetDatabase.AssetPathToGUID(texturePath);
-        if (string.IsNullOrEmpty(guidString))
+        if (!AssetDatabase.TryGetGUIDAndLocalFileIdentifier(texture, out var guidString, out long _))
             return -1;
 
         var guid = new System.Guid(guidString);
@@ -170,7 +266,7 @@ static class ImageTargetSetup
         return -1;
     }
 
-    static void WireUpScene(XRReferenceImageLibrary library)
+    static void WireUpScene(MarkerCatalog catalog, XRReferenceImageLibrary library)
     {
         var origin = Object.FindAnyObjectByType<XROrigin>();
         if (origin == null)
@@ -186,7 +282,7 @@ static class ImageTargetSetup
             manager = Undo.AddComponent<ARTrackedImageManager>(go);
 
         manager.referenceLibrary = library;
-        manager.requestedMaxNumberOfMovingImages = k_Markers.Length;
+        manager.requestedMaxNumberOfMovingImages = catalog.Markers.Count;
         manager.trackedImagePrefab = null;
 
         if (go.GetComponent<ARAnchorManager>() == null)
@@ -199,6 +295,8 @@ static class ImageTargetSetup
         var so = new SerializedObject(spawner);
         var targets = so.FindProperty("m_Targets");
 
+        PruneTargets(catalog, targets);
+
         var wired = new Dictionary<string, int>();
         for (var i = 0; i < targets.arraySize; i++)
         {
@@ -206,7 +304,9 @@ static class ImageTargetSetup
             wired[name] = i;
         }
 
-        foreach (var marker in k_Markers)
+        var laidOut = new List<(GameObject content, float widthMeters)>();
+
+        foreach (var marker in catalog.Markers)
         {
             if (!wired.TryGetValue(marker.imageName, out var index))
             {
@@ -216,8 +316,6 @@ static class ImageTargetSetup
                 var created = targets.GetArrayElementAtIndex(index);
                 created.FindPropertyRelative("referenceImageName").stringValue = marker.imageName;
 
-                // Agrandir un tableau serialise DUPLIQUE le dernier element : sans ce reset,
-                // la nouvelle station herite du sceneObject de la precedente.
                 created.FindPropertyRelative("sceneObject").objectReferenceValue = null;
             }
 
@@ -226,17 +324,17 @@ static class ImageTargetSetup
             var current = slot.objectReferenceValue;
 
             if (current == null || current.name != expectedName)
-            {
-                if (current != null)
-                {
-                    Debug.LogWarning(
-                        $"[Setup] \"{marker.imageName}\" pointait sur \"{current.name}\" au lieu de " +
-                        $"\"{expectedName}\". Reference corrigee.");
-                }
-
                 slot.objectReferenceValue = FindOrCreateSceneContent(go.scene, marker);
+
+            if (slot.objectReferenceValue is GameObject content)
+            {
+                EnsureMarkerReference(content, marker);
+                EnsureContentColliders(content);
+                laidOut.Add((content, marker.WidthInMeters));
             }
         }
+
+        LayoutContents(laidOut);
 
         so.ApplyModifiedProperties();
 
@@ -244,53 +342,156 @@ static class ImageTargetSetup
         EditorUtility.SetDirty(spawner);
         EditorSceneManager.MarkSceneDirty(go.scene);
         EditorSceneManager.SaveScene(go.scene);
-
-        Debug.Log($"[Setup] Scene \"{go.scene.name}\" configuree et sauvegardee.");
     }
 
-    static GameObject FindOrCreateSceneContent(Scene scene, MarkerDefinition marker)
+    static void PruneTargets(MarkerCatalog catalog, SerializedProperty targets)
     {
-        var objectName = k_ContentPrefix + marker.imageName;
+        var known = new HashSet<string>();
 
+        foreach (var marker in catalog.Markers)
+            known.Add(marker.imageName);
+
+        for (var i = targets.arraySize - 1; i >= 0; i--)
+        {
+            var name = targets.GetArrayElementAtIndex(i).FindPropertyRelative("referenceImageName").stringValue;
+
+            if (known.Contains(name))
+                continue;
+            targets.DeleteArrayElementAtIndex(i);
+        }
+    }
+
+    static void LayoutContents(List<(GameObject content, float widthMeters)> items)
+    {
+        var cursorX = 0f;
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var (content, widthMeters) = items[i];
+            var halfWidth = widthMeters * 0.5f;
+
+            if (i > 0)
+                cursorX += halfWidth;
+
+            Undo.RecordObject(content.transform, "Ranger les contenus AR");
+            content.transform.localPosition = new Vector3(cursorX, 0f, 0f);
+
+            cursorX += halfWidth + k_ContentMarginMeters;
+        }
+    }
+
+    static GameObject FindOrCreateContainer(Scene scene)
+    {
         foreach (var root in scene.GetRootGameObjects())
         {
-            if (root.name == objectName)
+            if (root.name == k_ContainerName)
                 return root;
         }
 
-        var content = new GameObject(objectName);
+        var container = new GameObject(k_ContainerName);
+        Undo.RegisterCreatedObjectUndo(container, "Creer le conteneur AR");
 
-        if (marker.withPlaceholder)
+        return container;
+    }
+
+    static GameObject FindOrCreateSceneContent(Scene scene, MarkerCatalog.Marker marker)
+    {
+        var objectName = k_ContentPrefix + marker.imageName;
+        var container = FindOrCreateContainer(scene);
+
+        var inContainer = container.transform.Find(objectName);
+        if (inContainer != null)
+            return inContainer.gameObject;
+
+        var existing = FindInScene(scene, objectName);
+        if (existing != null)
         {
-            var material = FindOrCreatePlaceholderMaterial();
-            if (material == null)
-            {
-                Object.DestroyImmediate(content);
-                return null;
-            }
-
-            var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            cube.name = "Cube";
-            cube.transform.SetParent(content.transform, false);
-            cube.transform.localScale = Vector3.one * 0.1f;
-            cube.transform.localPosition = new Vector3(0f, 0.05f, 0f);
-            cube.GetComponent<Renderer>().sharedMaterial = material;
-
-            Object.DestroyImmediate(cube.GetComponent<BoxCollider>());
+            Undo.SetTransformParent(existing.transform, container.transform, "Ranger le contenu AR");
+            return existing;
         }
+
+        var material = FindOrCreatePlaceholderMaterial();
+        if (material == null)
+            return null;
+
+        var content = new GameObject(objectName);
+        content.transform.SetParent(container.transform, false);
+
+        var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name = "Cube";
+        cube.transform.SetParent(content.transform, false);
+        cube.transform.localScale = Vector3.one * 0.1f;
+        cube.transform.localPosition = new Vector3(0f, 0.05f, 0f);
+        cube.GetComponent<Renderer>().sharedMaterial = material;
 
         content.SetActive(false);
 
         Undo.RegisterCreatedObjectUndo(content, "Creer le contenu AR");
 
-        Debug.Log(
-            marker.withPlaceholder
-                ? $"[Setup] \"{objectName}\" cree dans la scene, desactive. " +
-                  "Remplace son enfant Cube par ton propre modele 3D."
-                : $"[Setup] \"{objectName}\" cree VIDE dans la scene, desactive. " +
-                  "Glisse ton modele 3D dedans, en enfant. +Y est la normale au marqueur.");
-
         return content;
+    }
+
+    static GameObject FindInScene(Scene scene, string objectName)
+    {
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            foreach (var transform in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (transform.name == objectName)
+                    return transform.gameObject;
+            }
+        }
+
+        return null;
+    }
+
+    static void EnsureContentColliders(GameObject content)
+    {
+        foreach (var renderer in content.GetComponentsInChildren<Renderer>(true))
+        {
+            if (renderer.gameObject.name == k_ReferenceName)
+                continue;
+
+            if (renderer.GetComponent<Collider>() == null)
+                Undo.AddComponent<BoxCollider>(renderer.gameObject);
+        }
+    }
+
+    static void EnsureMarkerReference(GameObject content, MarkerCatalog.Marker marker)
+    {
+        var existing = content.transform.Find(k_ReferenceName);
+        GameObject reference;
+
+        if (existing != null)
+        {
+            reference = existing.gameObject;
+        }
+        else
+        {
+            reference = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            reference.name = k_ReferenceName;
+            reference.transform.SetParent(content.transform, false);
+
+            Object.DestroyImmediate(reference.GetComponent<BoxCollider>());
+            Undo.RegisterCreatedObjectUndo(reference, "Creer le repere de marqueur");
+        }
+
+        reference.transform.localPosition = Vector3.zero;
+
+        reference.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+
+        reference.transform.localScale =
+            new Vector3(marker.WidthInMeters, k_ReferenceThickness, marker.HeightInMeters);
+
+        var material = marker.referenceMaterial;
+
+        if (material == null)
+        {
+            material = FindOrCreatePlaceholderMaterial();
+        }
+
+        reference.GetComponent<Renderer>().sharedMaterial = material;
+        reference.SetActive(false);
     }
 
     static Material FindOrCreatePlaceholderMaterial()

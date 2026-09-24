@@ -6,6 +6,8 @@ using UnityEngine.XR.ARSubsystems;
 [RequireComponent(typeof(ARTrackedImageManager))]
 public class ImageTargetSpawner : MonoBehaviour
 {
+    public const string MarkerReferenceName = "MarkerReference";
+
     public enum PersistenceMode
     {
         FollowImage,
@@ -39,6 +41,8 @@ public class ImageTargetSpawner : MonoBehaviour
     readonly HashSet<string> m_AlreadyPlaced = new();
     readonly Dictionary<GameObject, Transform> m_OriginalParents = new();
 
+    bool m_ReferencesVisible;
+
     void Awake()
     {
         m_Manager = GetComponent<ARTrackedImageManager>();
@@ -55,11 +59,27 @@ public class ImageTargetSpawner : MonoBehaviour
             if (entry == null || entry.sceneObject == null)
                 continue;
 
-            // Memorise avant toute detection : Spawn() reparente l'objet sous l'image suivie,
-            // donc son conteneur d'origine serait perdu au moment de le ranger.
             m_OriginalParents[entry.sceneObject] = entry.sceneObject.transform.parent;
             entry.sceneObject.SetActive(false);
         }
+    }
+
+    public void ToggleMarkerReferences()
+    {
+        m_ReferencesVisible = !m_ReferencesVisible;
+
+        foreach (var entry in m_Targets)
+        {
+            if (entry == null || entry.sceneObject == null)
+                continue;
+
+            var reference = entry.sceneObject.transform.Find(MarkerReferenceName);
+
+            if (reference != null)
+                reference.gameObject.SetActive(m_ReferencesVisible);
+        }
+
+        LogAction(m_ReferencesVisible ? "Reperes affiches" : "Reperes masques");
     }
 
     public void ClearAll()
@@ -77,14 +97,10 @@ public class ImageTargetSpawner : MonoBehaviour
 
         m_Spawned.Clear();
 
-        // Sans ce reset, le mode PlaceOnce refuserait de reafficher un objet deja pose :
-        // le bouton masquerait definitivement jusqu'au redemarrage de l'app.
         m_AlreadyPlaced.Clear();
 
         LogAction("Objets masques");
-
-        if (m_Logger != null)
-            m_Logger.LogNoDetection();
+        LogNoDetection();
     }
 
     void OnEnable()
@@ -126,11 +142,6 @@ public class ImageTargetSpawner : MonoBehaviour
         if (target == null)
         {
             LogAction("Aucun objet associe");
-
-            Debug.LogWarning(
-                $"[ImageTargetSpawner] Image \"{imageName}\" detectee mais aucun objet ne lui est " +
-                "associe. Verifie que le champ 'Reference Image Name' de l'Inspector correspond " +
-                "exactement au nom saisi dans la ReferenceImageLibrary.", this);
             return;
         }
 
@@ -188,10 +199,6 @@ public class ImageTargetSpawner : MonoBehaviour
         if (m_AnchorManager == null)
         {
             LogAction($"\"{instance.name}\" pose sans ancrage");
-
-            Debug.Log(
-                $"[ImageTargetSpawner] \"{imageName}\" pose sans ancrage (aucun ARAnchorManager " +
-                "dans la scene). Ajoute-en un pour une position plus stable dans la duree.", this);
             return;
         }
 
@@ -212,10 +219,6 @@ public class ImageTargetSpawner : MonoBehaviour
         if (!result.status.IsSuccess())
         {
             LogAction($"\"{instance.name}\" pose, ancrage echoue");
-
-            Debug.LogWarning(
-                $"[ImageTargetSpawner] Echec de l'ancrage de \"{imageName}\". L'objet reste pose " +
-                "mais derivera avec le temps.", this);
             return;
         }
 
@@ -241,8 +244,8 @@ public class ImageTargetSpawner : MonoBehaviour
 
         m_Spawned.Remove(trackableId);
 
-        if (m_Spawned.Count == 0 && m_Logger != null)
-            m_Logger.LogNoDetection();
+        if (m_Spawned.Count == 0)
+            LogNoDetection();
     }
 
     void Log(string imageName, TrackingState state)
@@ -255,6 +258,12 @@ public class ImageTargetSpawner : MonoBehaviour
     {
         if (m_Logger != null)
             m_Logger.LogAction(action);
+    }
+
+    void LogNoDetection()
+    {
+        if (m_Logger != null)
+            m_Logger.LogNoDetection();
     }
 
     GameObject FindSceneObject(string referenceImageName)
