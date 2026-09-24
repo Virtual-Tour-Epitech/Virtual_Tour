@@ -27,6 +27,7 @@ public class CrosshairPointer : MonoBehaviour
 
     string m_AimedName;
     bool m_Initialised;
+    AimHighlight m_Highlight;
 
     void Awake()
     {
@@ -55,9 +56,22 @@ public class CrosshairPointer : MonoBehaviour
         var center = new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
         var ray = m_Camera.ScreenPointToRay(center);
 
-        var aimed = Physics.Raycast(ray, out var hit, m_MaxDistance, m_LayerMask)
-            ? hit.collider.gameObject.name
-            : null;
+        var hasHit = Physics.Raycast(ray, out var hit, m_MaxDistance, m_LayerMask);
+
+        var highlight = hasHit ? hit.collider.GetComponentInParent<AimHighlight>() : null;
+
+        if (highlight != m_Highlight)
+        {
+            if (m_Highlight != null)
+                m_Highlight.OnAimExit();
+
+            if (highlight != null)
+                highlight.OnAimEnter();
+
+            m_Highlight = highlight;
+        }
+
+        var aimed = hasHit ? hit.collider.gameObject.name : null;
 
         if (m_Initialised && aimed == m_AimedName)
             return;
