@@ -41,7 +41,7 @@ Notre groupe est composé de 3 membres, avec une répartition équilibrée selon
 ## 3. Planning Détaillé des Jalons
 
 [Semaine 1 : Bootstrap & Cadrage]
-├── Validation du Bootstrap AR (Camera Vuforia + Rendu Cube 3D)[cite: 1]
+├── Validation du Bootstrap AR (Caméra AR Foundation + Rendu Cube 3D)[cite: 1]
 ├── Rédaction de la documentation & Organisation du dépôt GitHub[cite: 1]
 └── Validation du Storyboard et repérage du bâtiment à scanner[cite: 1]
 │
@@ -69,7 +69,7 @@ Notre groupe est composé de 3 membres, avec une répartition équilibrée selon
    * Un panneau UI d'accueil apparaît pour expliquer le fonctionnement : *"Pointez votre caméra vers la cible au sol/mural pour charger la visite virtuelle"*.
 
 2. **Phase 2 : Ancrage & Entrée dans le Bâtiment Virtualisé**
-   * Une fois la cible détectée par Vuforia, le modèle 3D du bâtiment scanné (construit en primitives) apparaît superposé au monde réel[cite: 1].
+   * Une fois la cible détectée par l'`ARTrackedImageManager` d'AR Foundation, le modèle 3D du bâtiment scanné (construit en primitives) apparaît superposé au monde réel[cite: 1].
    * Un premier repère visuel (mini-carte ou flèches au sol) indique les zones explorables[cite: 1].
 
 3. **Phase 3 : Exploration des 3 Zones Interactives**
@@ -85,7 +85,7 @@ Notre groupe est composé de 3 membres, avec une répartition équilibrée selon
 ## 5. État du Bootstrap & Démo Technique
 
 * **Statut de la chaîne technique :**
-  * Licence Vuforia configurée et validée[cite: 1].
-  * Suivi de caméra (*AR Camera*) et détection d'ImageTarget opérationnels[cite: 1].
+  * AR Foundation 6.6.2 configuré via XR Plug-in Management, avec les plug-ins ARCore (Android) et ARKit (iOS) — aucune licence tierce requise[cite: 1].
+  * Suivi de caméra (*AR Session* + *AR Camera*) et détection d'ImageTarget via *Reference Image Library* opérationnels[cite: 1].
   * Rendu 3D validé avec l'affichage d'une primitive (Cube 3D)[cite: 1].
   * Génération des exécutables de test validée sur Android (`.apk`) et iOS (Xcode)[cite: 1].
