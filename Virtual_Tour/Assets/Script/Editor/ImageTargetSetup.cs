@@ -19,6 +19,7 @@ static class ImageTargetSetup
     const string k_ReferenceName = ImageTargetSpawner.MarkerReferenceName;
     const float k_ReferenceThickness = 0.001f;
     const float k_ContentMarginMeters = 0.05f;
+    static readonly Quaternion k_ReferenceRotation = Quaternion.Euler(0f, 180f, 0f);
 
     [MenuItem("Virtual Tour/Configurer l'Image Tracking")]
     static void Configure()
@@ -47,6 +48,72 @@ static class ImageTargetSetup
     static void HideContents()
     {
         SetContentsActive(false);
+    }
+
+    [MenuItem("Virtual Tour/Aligner le contenu selectionne sur son MarkerReference")]
+    static void AlignSelectedContent()
+    {
+        var content = Selection.activeTransform;
+        var reference = content != null ? content.Find(k_ReferenceName) : null;
+
+        if (reference == null)
+        {
+            Debug.LogError($"[Setup] Selectionne un ARContent qui contient un \"{k_ReferenceName}\".");
+            return;
+        }
+
+        const string undoName = "Aligner le contenu AR";
+        var container = content.parent;
+
+        if (container != null)
+        {
+            var siblings = new List<Transform>();
+
+            foreach (Transform sibling in container)
+            {
+                if (sibling != content)
+                    siblings.Add(sibling);
+            }
+
+            foreach (var sibling in siblings)
+            {
+                Undo.SetTransformParent(sibling, content, undoName);
+
+                if (sibling.GetComponent<RuntimeMeshHider>() == null)
+                    Undo.AddComponent<RuntimeMeshHider>(sibling.gameObject);
+            }
+        }
+
+        var targetPosition = reference.position;
+        var targetRotation = reference.rotation * Quaternion.Inverse(k_ReferenceRotation);
+
+        var children = new List<(Transform transform, Vector3 position, Quaternion rotation)>();
+
+        foreach (Transform child in content)
+            children.Add((child, child.position, child.rotation));
+
+        if (container != null)
+        {
+            Undo.RecordObject(container, undoName);
+            container.SetPositionAndRotation(targetPosition, targetRotation);
+        }
+
+        Undo.RecordObject(content, undoName);
+
+        if (container != null)
+            content.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+        else
+            content.SetPositionAndRotation(targetPosition, targetRotation);
+
+        foreach (var (child, position, rotation) in children)
+        {
+            Undo.RecordObject(child, undoName);
+            child.SetPositionAndRotation(position, rotation);
+        }
+
+        reference.SetLocalPositionAndRotation(Vector3.zero, k_ReferenceRotation);
+
+        EditorSceneManager.MarkSceneDirty(content.gameObject.scene);
     }
 
     static void SetContentsActive(bool active)
@@ -478,7 +545,7 @@ static class ImageTargetSetup
 
         reference.transform.localPosition = Vector3.zero;
 
-        reference.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+        reference.transform.localRotation = k_ReferenceRotation;
 
         reference.transform.localScale =
             new Vector3(marker.WidthInMeters, k_ReferenceThickness, marker.HeightInMeters);
